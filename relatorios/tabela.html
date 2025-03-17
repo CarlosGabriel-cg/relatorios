@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tree Table from Excel</title>
+  <link rel="stylesheet" href="https://cdn.datatables.net/1.13.4/css/jquery.dataTables.min.css">
+  <link rel="stylesheet" href="https://cdn.datatables.net/responsive/2.4.1/css/responsive.dataTables.min.css">
+  <link rel="stylesheet" href="https://cdn.datatables.net/2.2.2/css/dataTables.dataTables.css">
+  <style>
+    tr.shown td.dt-control i {
+        transform: rotate(45deg);
+    }
+    td.details-control {
+      background: url('https://datatables.net/examples/resources/details_open.png') no-repeat center center;
+      cursor: pointer;
+    }
+
+    tr.shown td.details-control {
+      background: url('https://datatables.net/examples/resources/details_close.png') no-repeat center center;
+    }
+    .child-table {
+    width: 100%;
+    margin-left: 20px; /* Mantém o deslocamento visual */
+    table-layout: fixed;
+  }
+  .child-table th,
+  .child-table td {
+    text-align: right; /* Alinha o conteúdo no centro */
+    padding: 8px; /* Espaçamento uniforme */
+  }
+  .child-table th:first-child,
+  .child-table td:first-child {
+    text-align: left; /* Alinha à esquerda */
+  }
+    </style>
+</head>
+
+<body>
+  <h1>Tree Table from Excel</h1>
+  <div>
+    <input type="file" id="fileInput" accept=".xlsx, .xls, .csv, .pdf" style="display: none;">
+    <label for="fileInput" id="fileLabel" class="btn btn-primary shadow-sm">
+      <i class="fas fa-upload fa-sm text-white-50"></i> Carregar Excel
+    </label>
+  </div>
+  <table id="example" class="display" style="width:100%">
+    <thead>
+      <tr>
+        <th></th>
+        <th>Conta</th>
+        <th>Saldo Anterior</th>
+        <th>Débitos</th>
+        <th>Créditos</th>
+        <th>Saldo</th>
+      </tr>
+    </thead>
+    <tfoot>
+      <tr>
+        <th></th>
+        <th>Conta</th>
+        <th>Saldo Anterior</th>
+        <th>Débitos</th>
+        <th>Créditos</th>
+        <th>Saldo</th>
+      </tr>
+    </tfoot>
+  </table>
+
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
+  <script src="https://code.jquery.com/jquery-3.7.1.js"></script>
+  <script src="https://cdn.datatables.net/2.2.2/js/dataTables.js"></script>
+  <script src="https://cdn.datatables.net/responsive/2.4.1/js/dataTables.responsive.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('fileInput').addEventListener('change', lerDados);
+    });
+  
+    function organizarHierarquia(dados) {
+    let hierarquia = {};
+    
+    dados.forEach(linha => {
+        if (!linha.Conta) return;
+
+        
+        let contaParts = linha.Conta.split(' - ');
+        let numero = contaParts.shift(); 
+        let descricao = contaParts.join(' - '); 
+
+        let niveis = numero.split('.');
+        let caminhoAtual = '';
+        
+        niveis.forEach((nivel, index) => {
+            caminhoAtual = caminhoAtual ? `${caminhoAtual}.${nivel}` : nivel;
+
+            if (!hierarquia[caminhoAtual]) {
+                hierarquia[caminhoAtual] = {
+                    numero: caminhoAtual,
+                    descricao: '',
+                    contaCompleta: '',
+                    children: [],
+                    nivel: index + 1,
+                    dados: linha
+                };
+            }
+
+            if (index === niveis.length - 1) {
+                hierarquia[caminhoAtual].descricao = descricao; 
+                hierarquia[caminhoAtual].contaCompleta = linha.Conta;
+            }
+        });
+    });
+
+    
+    
+    Object.keys(hierarquia).forEach(caminho => {
+        const niveis = caminho.split('.');
+        if (niveis.length > 1) {
+            const paiCaminho = niveis.slice(0, -1).join('.');
+            if (hierarquia[paiCaminho]) {
+                hierarquia[paiCaminho].children.push(hierarquia[caminho]);
+            }
+        }
+    });
+    
+    
+    const raizes = Object.values(hierarquia).filter(item => {
+        const niveis = item.numero.split('.');
+        return niveis.length === 4; 
+    });
+    
+    
+    function sortChildren(node) {
+        if (node.children && node.children.length > 0) {
+            node.children.sort((a, b) => {
+                return a.numero.localeCompare(b.numero, undefined, {numeric: true});
+            });
+            node.children.forEach(sortChildren);
+        }
+    }
+    
+    
+    raizes.sort((a, b) => a.numero.localeCompare(b.numero, undefined, {numeric: true}));
+    raizes.forEach(sortChildren);
+    
+    return raizes;
+}
+
+
+
+function transformarParaTabela(hierarquia, nivel = 0) {
+    if (!Array.isArray(hierarquia)) return [];
+
+    let rows = [];
+
+    hierarquia.forEach((item) => {
+        if (!item) return;
+
+        
+        const conta =  (item.descricao ? '&nbsp;'.repeat(nivel * 2) + item.numero + ' - ' + item.descricao : '');
+
+        rows.push({
+            id: item.numero || '',
+            'Conta': `${conta}`, 
+            'Saldo_Anterior': item.dados?.['Saldo_Anterior'] || '',
+            'Débitos': item.dados?.['Débitos'] || '',
+            'Créditos': item.dados?.['Créditos'] || '',
+            'Saldo': item.dados?.['Saldo'] || '',
+            filhos: Array.isArray(item.children) ?
+                transformarParaTabela(item.children, nivel + 1) : []
+        });
+    });
+
+    return rows;
+}
+
+
+window.dadosCarregados = [];
+
+function lerDados(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    updateFileLabel(file.name);
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+
+        const startText = "2.3.7.1.1.02.01 - Superávit ou Déficit Acumulado";
+        const endText = "4 - VARIAÇÃO PATRIMONIAL AUMENTATIVA";
+
+        const startIndex = jsonData.findIndex(row => row.includes(startText));
+        const endIndex = jsonData.findIndex(row => row.includes(endText));
+
+        if (startIndex !== -1 && endIndex !== -1 && startIndex < endIndex) {
+            const formattedData = jsonData.slice(startIndex + 1, endIndex).map((row) => ({
+                'Conta': row[0] || '',
+                'Saldo_Anterior': row[12] || '',
+                'Débitos': row[18] || '',
+                'Créditos': row[24] || '',
+                'Saldo': row[28] || ''
+            }));
+
+            
+            const hierarquia = organizarHierarquia(formattedData);
+
+            
+            window.dadosCarregados = transformarParaTabela(hierarquia);
+
+            
+            table.clear();
+            table.rows.add(window.dadosCarregados).draw();
+        }
+    };
+    reader.readAsArrayBuffer(file);
+}
+
+
+function updateFileLabel(fileName) {
+  document.getElementById('fileLabel').innerHTML = `<i class="fas fa-upload fa-sm text-white-50"></i> ${fileName}`;
+}
+
+
+function format(d) {
+  
+  const hierarquiaDetalhada = d['Conta'].split(' - ')[0];  
+  let detalhes = '<table class="child-table table table-bordered" style="padding-left: 20px; width: 100%;">';
+
+  
+  detalhes += `<tbody>`;
+  
+  
+  detalhes += `
+  <tr>
+    <td>${d['Conta'] || 0}</td>
+    <td>${d['Saldo_Anterior'] || 0}</td>
+    <td>${d['Débitos'] || 0}</td>
+    <td>${d['Créditos'] || 0}</td>
+    <td>${d['Saldo'] || 0}</td>
+  </tr>
+  `;
+
+  
+  if (d.filhos && d.filhos.length > 0) {
+    d.filhos.forEach((filho) => {
+      detalhes += format(filho);  
+    });
+  }
+
+  detalhes += '</tbody></table>';
+  return detalhes;
+}
+
+
+let table = new DataTable('#example', {
+  columns: [
+    {
+      className: 'details-control',
+      orderable: false,
+      data: null,
+      defaultContent: ''
+    },
+    { data: 'Conta' },
+    { data: 'Saldo_Anterior' },
+    { data: 'Débitos' },
+    { data: 'Créditos' },
+    { data: 'Saldo' }
+  ],
+  order: [[1, 'asc']],
+  rowId: 'id',
+  stateSave: true, 
+});
+
+table.on('requestChild.dt', function (e, row) {
+  row.child(format(row.data())).show();
+});
+
+
+table.on('click', 'td.details-control', function () {
+  const tr = $(this).closest('tr');
+  const row = table.row(tr);
+
+  if (row.child.isShown()) {
+    row.child.hide();
+    tr.removeClass('shown');
+    $(this).html('<i class="fa fa-plus-square"></i>');
+  } else {
+    row.child(format(row.data())).show();
+    tr.addClass('shown');
+    $(this).html('<i class="fa fa-minus-square"></i>');
+  }
+});
+
+  </script>
+  
+</body>
+
+</html>
